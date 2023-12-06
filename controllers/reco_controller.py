@@ -3,7 +3,7 @@ from services.reco_service import hybrid_recommend_products
 
 recommendation_blueprint = Blueprint('recommendation', __name__)
 
-@recommendation_blueprint.route('/recommend', methods=['POST'])
+@recommendation_blueprint.route('/test', methods=['POST'])
 def recommend():
     data = request.json
     product_id = data.get('product_id')
