@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from services.reco_service import get_recommendations
+from services.reco_service import hybrid_recommend_products
 
 recommendation_blueprint = Blueprint('recommendation', __name__)
 
@@ -7,5 +7,5 @@ recommendation_blueprint = Blueprint('recommendation', __name__)
 def recommend():
     data = request.json
     product_id = data.get('product_id')
-    recommendations = get_recommendations(product_id)
-    return jsonify(recommendations)
+    recommendations = hybrid_recommend_products(product_id)
+    return jsonify({'recommendations': recommendations})

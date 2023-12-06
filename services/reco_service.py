@@ -1,20 +1,19 @@
-from db_service import fetch_user_logs, fetch_product_data
-from models.reco_model import CollaborativeFilteringModel, ContentBasedFilteringModel, hybrid_recommend_products
+from models.reco_model import get_cooccurrence_matrix, get_product_info, get_similarity_df
+from utils.reco_utils import cf_recommend_products, recommend_products, hybrid_recommend_products as hybrid_rec
 
-def get_recommendations(user_id):
-    user_logs = fetch_user_logs(user_id)
-    product_data = fetch_product_data()
+def hybrid_recommend_products(product_id):
+    # cooccurrence_matrix 및 기타 필요한 데이터를 가져오는 로직
+    cooccurrence_matrix = get_cooccurrence_matrix()
+    product_info = get_product_info(product_id)
+    similarity_df = get_similarity_df(product_info)
 
-    cf_model = CollaborativeFilteringModel(user_logs)
-    cb_model = ContentBasedFilteringModel(product_data)
+    # 협업 필터링 추천
+    cf_recommendations = cf_recommend_products(product_id, cooccurrence_matrix)
 
-    # 마지막으로 조회한 상품 ID (가장 최근의 로그)
-    last_viewed_product_id = user_logs[-1] if user_logs else None
+    # 콘텐츠 기반 필터링 추천
+    cb_recommendations = recommend_products(product_info, similarity_df)
 
-    # 하이브리드 추천 시스템 실행
-    if last_viewed_product_id:
-        recommendations = hybrid_recommend_products(last_viewed_product_id, cf_model, cb_model)
-    else:
-        recommendations = []
+    # 하이브리드 필터링으로 최종 추천 목록 생성
+    recommendations = hybrid_rec(cf_recommendations, cb_recommendations)
 
     return recommendations

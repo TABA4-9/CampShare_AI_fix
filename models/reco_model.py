@@ -1,61 +1,53 @@
-from collections import defaultdict
+import pyodbc
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from services.db_service import fetch_product_data
+from collections import defaultdict
+
+def db_connection():
+    return pyodbc.connect(
+        'MYDB;UID=sys;PWD=tibero')
 
 
-# 협업 필터링 모델
-class CollaborativeFilteringModel:
-    def __init__(self):
-        self.cooccurrence_matrix = defaultdict(lambda: defaultdict(int))
+def get_cooccurrence_matrix():
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_logs")
+    logs = cursor.fetchall()
+    conn.close()
 
-    def update_cooccurrence_matrix(self, user_log):
-        viewed_products = user_log.split(', ')
+    # 로그 데이터를 기반으로 cooccurrence_matrix 생성
+    cooccurrence_matrix = defaultdict(lambda: defaultdict(int))
+    for row in logs:
+        viewed_products = row[1].split(', ')
         for i in range(len(viewed_products)):
             for j in range(i + 1, len(viewed_products)):
                 product1, product2 = viewed_products[i], viewed_products[j]
-                self.cooccurrence_matrix[product1][product2] += 1
-                self.cooccurrence_matrix[product2][product1] += 1
+                cooccurrence_matrix[product1][product2] += 1
+                cooccurrence_matrix[product2][product1] += 1
+    return cooccurrence_matrix
 
-    def recommend_products(self, viewed_product, top_n=3):
-        related_products = self.cooccurrence_matrix[viewed_product]
-        recommended = sorted(related_products.items(), key=lambda x: x[1], reverse=True)
-        return [product for product, _ in recommended[:top_n]]
 
-# 콘텐츠 기반 필터링 모델
-class ContentBasedFilteringModel:
-    def __init__(self):
-        self.df = fetch_product_data()
-        self.tfidf_vectorizer = TfidfVectorizer()
-        self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(self.df['Name'])  # 'Name' 컬럼은 상품명을 나타냅니다.
-        self.similarity_df = pd.DataFrame(cosine_similarity(self.tfidf_matrix), index=self.df['Name'], columns=self.df['Name'])
+def get_product_info(product_id):
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT NAME FROM products WHERE id=?", (product_id,))
+    product_info = cursor.fetchone()
+    conn.close()
+    return product_info
 
-    def recommend_products(self, selected_product, top_n=5):
-        if selected_product not in self.similarity_df.columns:
-            return ["선택한 상품이 데이터에 없습니다."]
-        sim_scores = self.similarity_df[selected_product]
-        sorted_indices = np.argsort(-sim_scores)
-        recommended_products_list = []
-        for index in sorted_indices:
-            product = self.similarity_df.index[index]
-            if product != selected_product and product not in recommended_products_list:
-                recommended_products_list.append(product)
-                if len(recommended_products_list) >= top_n:
-                    break
-        return recommended_products_list
 
-# 하이브리드 추천 모델
-def hybrid_recommend_products(user_viewed_product, selected_product, cf_model, cb_model, top_n=3):
-    cf_recommendations = cf_model.recommend_products(user_viewed_product, top_n)
-    cb_recommendations = cb_model.recommend_products(selected_product, top_n)
+def get_similarity_df(product_info):
+    # DB에서 전체 상품 데이터를 가져와서 TF-IDF와 코사인 유사도 계산
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT NAME FROM products")
+    products = cursor.fetchall()
+    conn.close()
 
-    combined_scores = defaultdict(int)
-    for rank, product in enumerate(cf_recommendations):
-        combined_scores[product] += top_n - rank
-    for rank, product in enumerate(cb_recommendations):
-        combined_scores[product] += top_n - rank
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform([product_info[0]] + [p[0] for p in products])
+    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
-    return [prod for prod, _ in sorted(combined_scores.items(), key=lambda item: item[1], reverse=True)[:top_n]]
-
+    return pd.DataFrame(cosine_sim, index=[product_info[0]] + [p[0] for p in products],
+                        columns=[product_info[0]] + [p[0] for p in products])
