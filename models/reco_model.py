@@ -19,7 +19,7 @@ class CollaborativeFilteringModel:
                 self.cooccurrence_matrix[product1][product2] += 1
                 self.cooccurrence_matrix[product2][product1] += 1
 
-    def recommend_products(self, viewed_product, top_n=5):
+    def recommend_products(self, viewed_product, top_n=3):
         related_products = self.cooccurrence_matrix[viewed_product]
         recommended = sorted(related_products.items(), key=lambda x: x[1], reverse=True)
         return [product for product, _ in recommended[:top_n]]
@@ -47,7 +47,7 @@ class ContentBasedFilteringModel:
         return recommended_products_list
 
 # 하이브리드 추천 모델
-def hybrid_recommend_products(user_viewed_product, selected_product, cf_model, cb_model, top_n=5):
+def hybrid_recommend_products(user_viewed_product, selected_product, cf_model, cb_model, top_n=3):
     cf_recommendations = cf_model.recommend_products(user_viewed_product, top_n)
     cb_recommendations = cb_model.recommend_products(selected_product, top_n)
 
@@ -59,16 +59,3 @@ def hybrid_recommend_products(user_viewed_product, selected_product, cf_model, c
 
     return [prod for prod, _ in sorted(combined_scores.items(), key=lambda item: item[1], reverse=True)[:top_n]]
 
-# 사용 예시
-# product_data_path는 Tibero DB에서 추출한 상품 데이터 파일의 경로를 나타냅니다.
-cf_model = CollaborativeFilteringModel()
-cb_model = ContentBasedFilteringModel()
-
-# 사용자 로그 업데이트
-user_log = '145, 146, 147'  # 예시 로그 데이터
-cf_model.update_cooccurrence_matrix(user_log)
-
-# 하이브리드 추천 실행
-user_viewed_product = '145'
-selected_product = '네이처하이크 에어텐트 12X'
-recommendations = hybrid_recommend_products(user_viewed_product, selected_product, cf_model, cb_model)
