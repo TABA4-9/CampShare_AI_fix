@@ -34,12 +34,18 @@ def content_based_filtering(current_product_name):
 
     cosine_sim = cosine_similarity(tfidf_matrix)
     current_product_idx = products_df.index[products_df['name'] == current_product_name][0]
+
+    # 현재 상품에 대한 유사도 점수를 0으로 설정
+    cosine_sim[current_product_idx] = 0
+
     similarity_scores = list(enumerate(cosine_sim[current_product_idx]))
 
     # 현재 상품을 제외한 다른 상품들에 대한 유사도 점수 반환
-    filtered_scores = {products_df.iloc[i[0]]['id']: i[1] for i in similarity_scores if i[0] != current_product_idx}
+    filtered_scores = {products_df.iloc[i[0]]['id']: i[1] for i in similarity_scores}
 
     return filtered_scores
+
+
 
 
 # 하이브리드 추천 로직
