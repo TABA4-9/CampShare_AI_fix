@@ -10,8 +10,11 @@ app = Flask(__name__)
 user_logs = []
 products_info = []
 
+
 # 협업 필터링 로직
 def collaborative_filtering(current_product_id):
+    if not user_logs or current_product_id not in [log['itemId'] for log in user_logs]:
+        return {}
     user_logs_df = pd.DataFrame(user_logs)
     user_logs_df['TIMESTAMP'] = pd.to_datetime(user_logs_df['timeStamp'])
     user_logs_df.sort_values(by=['userId', 'timeStamp'], inplace=True)
@@ -33,19 +36,38 @@ def content_based_filtering(current_product_name):
     current_product_idx = products_df.index[products_df['name'] == current_product_name][0]
     similarity_scores = list(enumerate(cosine_sim[current_product_idx]))
 
-    return {products_df.iloc[i[0]]['id']: i[1] for i in similarity_scores}
+    # 현재 상품을 제외한 다른 상품들에 대한 유사도 점수 반환
+    filtered_scores = {products_df.iloc[i[0]]['id']: i[1] for i in similarity_scores if i[0] != current_product_idx}
+
+    return filtered_scores
+
 
 # 하이브리드 추천 로직
-def hybrid_recommendations(cf_scores, cb_scores):
-    combined_scores = defaultdict(float)
-    for prod_id, score in cf_scores.items():
-        combined_scores[prod_id] += score
-    for prod_id, score in cb_scores.items():
-        combined_scores[prod_id] += score
+def hybrid_recommendations(current_product_id, current_product_name, top_n=3):
+    # 협업 필터링 기반 점수
+    cf_scores = collaborative_filtering(current_product_id)
+    cf_ranked_scores = {prod_id: top_n - rank for rank, prod_id in enumerate(sorted(cf_scores, key=cf_scores.get, reverse=True)[:top_n])}
 
-    top_recommendations = sorted(combined_scores, key=combined_scores.get, reverse=True)[:3]
-    # int64 타입을 기본 int 타입으로 변환
-    return [int(prod_id) for prod_id in top_recommendations]
+    # 콘텐츠 기반 필터링 기반 점수
+    cb_scores = content_based_filtering(current_product_name)
+    cb_ranked_scores = {prod_id: top_n - rank for rank, prod_id in enumerate(sorted(cb_scores, key=cb_scores.get, reverse=True)[:top_n])}
+
+    # 협업 필터링 결과만 사용하는 경우
+    if not cb_ranked_scores:
+        return sorted(cf_scores, key=cf_scores.get, reverse=True)[:top_n]
+
+    # 콘텐츠 기반 필터링 결과만 사용하는 경우
+    if not cf_ranked_scores:
+        return sorted(cb_scores, key=cb_scores.get, reverse=True)[:top_n]
+
+    # 점수 기반 결과 결합
+    combined_scores = defaultdict(int)
+    for prod_id in set(cf_ranked_scores.keys()).union(cb_ranked_scores.keys()):
+        combined_scores[prod_id] += cf_ranked_scores.get(prod_id, 0) + cb_ranked_scores.get(prod_id, 0)
+
+    # 상위 N개 추천 반환
+    return [int(prod_id) for prod_id, score in sorted(combined_scores.items(), key=lambda item: item[1], reverse=True)[:top_n]]
+
 
 @app.route('/test/product', methods=['POST'])
 def handle_product_info():
@@ -65,22 +87,13 @@ def handle_current_product():
     if 'id' in current_product:
         current_product_id = current_product['id']
     else:
-        # 에러 처리 로직, 예를 들어 오류 메시지 반환
         return jsonify({'error': 'Missing id in current_product'}), 400
     if 'name' in current_product:
         current_product_name = current_product['name']
     else:
-        # 에러 처리 로직, 예를 들어 오류 메시지 반환
-        return jsonify({'error': 'Missing id in current_product'}), 400
+        return jsonify({'error': 'Missing name in current_product'}), 400
 
-
-    cf_scores = collaborative_filtering(current_product_id)
-    cb_scores = content_based_filtering(current_product_name)
-    combined_recommendations = hybrid_recommendations(cf_scores, cb_scores)
-
-    # 전역 변수 초기화
-    user_logs = []
-    products_info = []
+    combined_recommendations = hybrid_recommendations(current_product_id, current_product_name)
 
     # 반환할 JSON 객체 생성
     recommendations_json = {}
