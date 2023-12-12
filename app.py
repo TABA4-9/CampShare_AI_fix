@@ -20,10 +20,12 @@ def collaborative_filtering(current_product_id):
     user_logs_df.sort_values(by=['userId', 'timeStamp'], inplace=True)
     user_logs_df['NEXT_PRODUCT_ID'] = user_logs_df.groupby('userId')['itemId'].shift(-1)
 
-    next_products = user_logs_df[user_logs_df['itemId'] == current_product_id]['NEXT_PRODUCT_ID']
+    # 현재 상품과 동일한 다음 상품 제외
+    next_products = user_logs_df[(user_logs_df['itemId'] == current_product_id) & (user_logs_df['NEXT_PRODUCT_ID'] != current_product_id)]['NEXT_PRODUCT_ID']
     next_product_counts = next_products.value_counts()
 
     return next_product_counts.astype(int).to_dict()
+
 
 
 # 콘텐츠 기반 필터링 로직
@@ -35,15 +37,14 @@ def content_based_filtering(current_product_name):
     cosine_sim = cosine_similarity(tfidf_matrix)
     current_product_idx = products_df.index[products_df['name'] == current_product_name][0]
 
-    # 현재 상품에 대한 유사도 점수를 0으로 설정
-    cosine_sim[current_product_idx] = 0
-
-    similarity_scores = list(enumerate(cosine_sim[current_product_idx]))
+    # 유사도 목록에서 현재 상품 제외
+    similarity_scores = [(i, score) for i, score in enumerate(cosine_sim[current_product_idx]) if i != current_product_idx]
 
     # 현재 상품을 제외한 다른 상품들에 대한 유사도 점수 반환
     filtered_scores = {products_df.iloc[i[0]]['id']: i[1] for i in similarity_scores}
 
     return filtered_scores
+
 
 
 
@@ -58,21 +59,18 @@ def hybrid_recommendations(current_product_id, current_product_name, top_n=3):
     cb_scores = content_based_filtering(current_product_name)
     cb_ranked_scores = {prod_id: top_n - rank for rank, prod_id in enumerate(sorted(cb_scores, key=cb_scores.get, reverse=True)[:top_n])}
 
-    # 협업 필터링 결과만 사용하는 경우
-    if not cb_ranked_scores:
-        return sorted(cf_scores, key=cf_scores.get, reverse=True)[:top_n]
-
-    # 콘텐츠 기반 필터링 결과만 사용하는 경우
-    if not cf_ranked_scores:
-        return sorted(cb_scores, key=cb_scores.get, reverse=True)[:top_n]
-
-    # 점수 기반 결과 결합
+    # 협업 필터링과 콘텐츠 기반 필터링 결과를 결합
     combined_scores = defaultdict(int)
     for prod_id in set(cf_ranked_scores.keys()).union(cb_ranked_scores.keys()):
         combined_scores[prod_id] += cf_ranked_scores.get(prod_id, 0) + cb_ranked_scores.get(prod_id, 0)
 
+    # 현재 상품 제외
+    if current_product_id in combined_scores:
+        del combined_scores[current_product_id]
+
     # 상위 N개 추천 반환
     return [int(prod_id) for prod_id, score in sorted(combined_scores.items(), key=lambda item: item[1], reverse=True)[:top_n]]
+
 
 
 @app.route('/test/product', methods=['POST'])
